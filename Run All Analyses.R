@@ -34,3 +34,5 @@ source(paste0(directory, "Code/", "6. Create WC Results Data.R"))
 # point for your own exploration. Explore the script individually and change the models or figures
 # to your own volition.
 source(paste0(directory, "Code/", "7. Analyze WCQ and WCF data.R"))
+# Script 8 is explicity created for exploration and won't even work if sourced
+# as variables need to be replaced and defined in the models.
