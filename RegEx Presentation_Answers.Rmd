@@ -1,0 +1,614 @@
+---
+title: "Regular Expressions: Answer Key"
+author: "Julian Gerez^[Presented at the Columbia University Department of Political Science Graduate Student Methods Workshop.]"
+date: "March 1, 2019"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+A note about this answer key: regular expressions often have many different ways of getting at the right answer. You might find different solutions to these problems, with different patterns, different functions, etc. This is fine, so long as you end up with the correct answer.
+
+# Introduction to regular expressions
+
+Have you ever wanted to merge two datasets only to hopelessly learn that the `id` variable in each of the datasets is mismatched (e.g. the `id`s in the first dataset are looking something like "Atlántico", "Bolívar", "Boyacá", while the `id` in the second datasets are "Atlantico", "Bolivar", "Boyaca")[^1]? Have you ever used webscraping only to find that a lot of the text you just extracted is just full of (*regularly*[^2] repeating) nonsense? Have you ever wanted to read in all the files of a certain extension into a folder using R? All of these desires and more can be fulfilled with regular expressions!
+
+## So what are regular expressions, even?
+
+If you've ever worked with a big dataset in Stata you might have had several variables each starting with the same name, say `oil_exp1994`, `oil_exp1995`, `oil_exp1996` and so on. You might have learned (like me, after having tediously typed out many variable names in the past) that you can use `oil_exp*` to refer to *any* variable that starts with `oil_exp` and then has as many characters afterward as needed.[^3] Though this is a very basic example, this is *kind of* like a regular expression.
+
+**A regular expression, or regex for short, is a special text string for describing a search pattern in text.**
+
+Here is a more complex regular expression than that single asterisk:
+
+<center>
+`[A-z]*\\.*? +[0-9]{1,2}-[0-9]{1,2}`
+</center>
+
+---
+
+No, I did not just randomly mash on my keyboard: I can assure you that bit of code has meaning, and in this workshop, you're going to learn how to interpret it!
+
+This workshop will walk you toward understanding of *regex*, first going through how they work and function, and then using some applied examples. The tutorial is structured in `R`, and does pressupose some basic `R` knowledge, but the good news is that most of what you'll learn today is applicable for any software that has compatibility with regex (the syntax slightly varies from one platform to another), like Java, Python, Perl, Ruby, whatever you like. The biggest differences are going to be that we'll be learning functions in `R` that perform certain tasks, and the names for those will almost certainly be different in other softwares. *What's nice is that the underlying logic of regex will be the same.*
+
+This workshop is heavily based off of Chapter 14 in **R for Data Science** by Hadley Wickham, but deviates at many different points. An answer key, as well as the data specified in the "Real World Examples" section, can be found on my GitHub at https://github.com/JulianEGerez/RegEx_Workshop.
+
+## A simple example where regex might be useful
+
+You may also have heard of string manipulation functions and are wondering if they are the same as regex. Not quite, though the two are complementary. String manipulation are also used to extract information from text variables, but are often much more simple than regular expressions. For example, suppose you have a list of email addresses like so:
+
+```{r}
+emails <- c("aaa@gmail.com", "bbb@gmail.com", "ccc@gmail.com", "abc@gmail.com")
+```
+
+Say you want to get (the technical term here is *extract*) the usernames from the emails. Pretend like this is a much longer list and it doesn't make sense to write it out by hand. We can use the `substr` command in `R` to do so very easily:
+
+```{r}
+substr(emails, 1, 3)
+```
+
+This commands works as follows: `substr(x, start, stop)`, where `x` is a vector of strings, `start` is an integer and represents the starting value of your "request", and `stop` likewise represents the last value. If we switch the `stop` value in the code above to 2, what will happen? The `start` value?
+
+So it turns out we actually want the domain names of the emails, not the usernames. Write some code that will extract the domain name (everything after the @ sign):
+
+```{r}
+substr(emails, 5, 5+9)
+```
+
+Well done! But now I'm going to throw a wrench into your plan. What if our list of emails looks like this?
+
+```{r}
+emails <- c("lionel@gmail.com", "sergio@wikipedia.org", "gonzalo@columbia.edu", "angel@gmail.com")
+```
+
+You can quickly see how simple string manipulation commands won't get us very far. All hope is not lost though! This is exactly what regular expressions are for! But let's not get carried away and back up a bit because first we need to go over some string theory.
+
+# String basics
+
+`R` treats any value stored within a pair of quotes as a string. (Including numbers!). I recommend using double quotes for your strings, but single quotes can be used as well. Single quotes can be used if you want to include literal double quotes in your string.
+
+```{r}
+"string example"
+'1' # this is also a string
+'this too is a "string"'
+```
+
+Notice how `R` put a backslash before the double quotes within this string. In technical terms, this character is *escaped*. The backslash is a special character that allows you to escape other characters. Just for ease of understanding, let's stick with using double quotes *always* for strings, and if we need to use quotation marks within our string, we will escape them. This will be good practice for when we get further into regex. Also note that `R` uses "character" to distinguish strings from other types of data that it stores.
+
+```{r}
+example <- "this string will have a quotation mark inside it because I escaped it \" see?"
+example
+# test that without the escape character, the string is invalid
+typeof(example)
+```
+
+Other errors can pop up if you forget to close a string at all. You'll see the ticker in your console change from `>` to a `+`, which means that `R` is expecting you to do something else. Worry not, you can press the escape key on your keyboard to fix the issue. Using single quotation marks at the beginning of a string and double quotation marks at the end or vice versa will also produce an invalid string. Another reason to just stick with the double quotation marks!
+
+One more thing before we move on: note how the printed representation of a string *is not* the same as the string itself. In the above chunk of code, `example` included the escape character. We can use `writeLines` to see the "raw" string itself:
+
+```{r}
+writeLines(example)
+```
+
+This string does not contain the escape character. Escape characters are very important in regex, and we'll come back to them later. If you want to use a literal backslash, you have to escape *it*, which means use two backslashes. Fun!
+
+## Some simple string functions
+
+Here are a few functions that are useful for manipulating strings without regular expressions, much like `substr` earlier.
+
+### Number of characters in a string
+
+`nchar` will return the number of characters in a particular string:
+
+```{r}
+example <- "this is a test"
+nchar(example)
+```
+
+### Pasting text together
+
+If you know anything about `R`, you know that `c` combines values into a vector or list, but you can use `paste` or `paste0` to concatenate character vectors.
+
+```{r}
+letters <- c("a", "b", "c")
+paste(letters, "1")
+```
+
+You can use the `sep = " "` option to use a different separator for the terms (notice that the default `sep` value in `paste` is a space, `paste0` does not use any separation at all). You can also use `collapse` to turn the vectors into a single string. Use the following box to produce the string "a1_b1_c1_", only using `paste`. These functions are very useful when loading in files in loops, among other possibilities.
+
+```{r}
+paste0(letters, "1_", collapse = "")
+```
+
+### Upper and lowercase text
+
+The functions `toupper` and `tolower` change strings to uppercase and lowercase, respectively:
+
+```{r}
+toupper(example)
+tolower(example)
+```
+
+### Trim leading and trailing whitespace
+
+Finally, and **super importantly**, `trimws` removes leading and trailing white space from your strings. You have no idea how helpful this can end up being. These are so sneaky and can cause you many issues because they're hard to detect. This function takes care of it for you.
+
+```{r}
+example <- " this is a test with an annoying space at the beginning and end "
+trimws(example)
+```
+
+## The tidy string functions
+
+I'm sure many of you know Hadley Wickham, the hero of the `tidyverse`, among other distinctions. The `tidy` library of string functions is `stringr`, and we'll be making use of it, so go ahead and install it if you don't have it installed already, and then load it. They have names that are a lot easier to remember than the base `R` regular expression functions, and can do more tasks.
+
+```{r}
+# install.packages('stringr')
+library(stringr)
+```
+
+A few of the functions we've already talked about have close to twins in the `tidyverse`, but they're worth briefly mentioning: 
+
+* `str_length` returns the length of a string or the length of each element in a vector of strings
+* `str_c` is somewhat equivalent to `paste` (though you can use `str_replace_NA` to deal with NAs more easily compared to `paste`, this is often a source of headaches)
+* `str_trim` removes trailing and leading whitespace, and `str_squish` reduces repeated whitespace inside of a string (e.g. `"whoops   I  typed an  extra   number of spaces  randomly"` becomes `"whoops I typed an extra number of spaces randomly"`).
+
+### Subsetting strings
+
+This will be our last "advanced" string function before turning to regular expressions. Much like `substr`, you can use `str_sub` to extract parts of a string. Going back to our email example, we can extract the names as follows
+
+```{r}
+emails <- c("aaa@gmail.com", "bbb@gmail.com", "ccc@gmail.com", "abc@gmail.com")
+str_sub(emails, 1, 3)
+```
+
+Note that if you increase the second argument of the function to a number that is longer than the string, it'll return as much as it can.
+
+In our first exercise, you might have used the starting position of the "at-sign" to grab the domain names, but you can also actually use negative numbers to start counting from the end of a string. Extract the domain names from `emails` using negative numbers in the box below:
+
+```{r}
+str_sub(emails, -9, -1)
+```
+
+Let's move to our more complex set of emails. Use the functions we've learned to return the middle character from each string. What happens if the string has an even number of characters?
+
+```{r}
+emails <- c("lionel@gmail.com", "sergio@mac.com", "gonzalo@columbia.edu", "angel@gmail.com")
+str_sub(emails, round(str_length(emails)/2), round(str_length(emails)/2))
+```
+
+# Regular expressions
+
+Onto the good stuff! Let's talk about regex explicitly. Recall that regular expressions are simply special text strings for describing a search pattern in text. We're going to start with simple regular expressions and make our way onto more complex expressions.
+
+## Matching exact text
+
+To test our simple regular expressions, let's take the following list of pastas:
+
+```{r}
+pastas <- c("pappardelle", "farfalle", "campanelle", "bucatini", "spaghetti", "gnocchi", "orecchiete", "penne", "ravioli", "linguini", "tortellini")
+```
+
+The simplest regexs will return exact matches for you. In all of the following examples, we will be searching for the pattern "ini," but notice how different functions differ across the format of and amount of details in the results. Notice also, that the first argument of each of these functions is the regular expression pattern.
+
+`grep` returns the index of matches, in this case, 4, 10, and 11. Its arguments are the search pattern, and the character vector where matches are sought, or `x`.
+
+```{r}
+grep("ini", pastas) # returns index of matches
+```
+
+We can use the index values to return the respective pastas as follows:
+
+```{r}
+pastas[c(4,10,11)]
+```
+
+Or we can use the `value = TRUE` argument of `grep`:
+
+```{r}
+grep("ini", pastas, value = TRUE)
+```
+
+`grepl` will return a vector of the same length as `x` with values of `TRUE` or `FALSE` dependent on if there is a match or not:
+
+```{r}
+grepl("ini", pastas) # returns logical vector of length x
+```
+
+Using the results from `grepl`, recover our three pastas of choice:
+
+```{r}
+pastas[grepl("ini", pastas)]
+```
+
+If we want to find the index of matches *within* our strings (and some other information) we can use `regexpr`:
+
+```{r}
+regexpr("ini", pastas) # returns the index of first match
+```
+
+And `gregexpr` gives us even more information. We couldn't tell from the previous example, because the pattern `"ini"` only happened once in the words where it matched, but `gregexpr` can return info for multiple matches. This question about how regex deals with multiple matches is very important, and we'll come back to more on this later.
+
+```{r}
+gregexpr("a", pastas)[1:2] # returns index of all matches
+```
+
+Two other functions to note are `sub` and `gsub`, which replace occurrences of the specified pattern. The former replaces only the first occurrence (i.e. if your pattern is `"p"` and you choose to replace it with a blank `""`, `sub` will remove only the first `"p"` in the string) while `gsub` replaces all occurrences.
+
+There are more ways you can work with the results of regular expression matches, and we'll come back to these, but for now let's actually use a `stringr` function you probably won't use a ton in the future: `str_view`. The nice thing about `str_view` is that it shows you your matches exactly. In this way, we can practice upping the complexity of our regular expressions as opposed to the functions surrounding the expressions. If you want a function that extracts these into a new character vector, you can use `str_extract`.
+
+## Wildcard matches
+
+We can use the `.` character to match *any* character except for a new line. Notice how the arguments of `str_view` are reversed, and we place the vector we're searching in before the pattern we are searching for.
+
+```{r}
+str_view(emails, ".a")
+```
+
+Notice also how we are only capturing the *first* iteration of the match. Which instance of `.a` are we missing here as a result? We'll "fix" this issue later when we learn about metacharacters.
+
+What if you want to match a `.` exactly? Remember our escape character? We can use the backslash to write an expression to match the period precisely. But wait, since the backslash is a special character, we have to escape *it* as well. This means that to match a period exactly, we can use `\\.`. This also means that if we want to match a single backslash exactly, we have to escape its escape characters, i.e. use `\\\\`, and so on!
+
+```{r}
+str_view(emails, "\\.")
+```
+
+This is a very subtle point, but one that is very important, so let's go through each of those quadruple backslashes individually to fix ideas:
+
+* Why doesn't `"\"` match a backslash exactly?
+* Why doesn't `"\\"` match a backslash exactly?
+* Why doesn't `"\\\"` match a backslash exactly?
+
+One more exercise before moving on, write a regular expression to match the domain of the emails (everything after the period, inclusive).
+
+```{r}
+str_view(emails, "\\....")
+```
+
+## Anchors
+
+Some more special characters for you to remember (to match these exactly you'll have to double-backslash them) are anchors. As their name indicates, anchors *anchor* the regular expression to the start or end of a string:
+
+* `^` will match the start of a string
+* `$` will match the end of a string
+
+Going back to our pasta example, using `i` as our pattern will match the first `i` in each string, but using `i$` will match `i` if and only if it is the last character in the string.
+
+```{r}
+str_view(pastas, "i")
+```
+
+```{r}
+str_view(pastas, "i$")
+```
+
+Combining the two allows for some very specific matches: you can use this to match complete strings only:
+
+```{r}
+food <- c("apple pie", "apple strudel", "apple", "cinnamon apple")
+str_view(food, "^apple$")
+```
+
+Let's use `stringr`'s library of common words for some more practice. Your exercises are to write regular expressions to:
+
+1. Find all words that start with *k*.
+2. Find all words that end with *t*.
+3. Are exactly four letters long (no cheating with string manipulation functions!).
+4. Find the longest word in the list (here you can use string manipulation functions).
+5. Make a table of word frequency by starting letter.
+
+```{r, eval = FALSE}
+common_words <- stringr::words
+# 1
+grep("^k", common_words, value = TRUE)
+# 2
+grep("t$", common_words, value = TRUE)
+# 3
+grep("^....$", common_words, value = TRUE)
+# 4
+common_words[nchar(common_words) == max(nchar(common_words))]
+# 5
+table(substr(common_words, 1, 1))
+```
+
+## Character classes
+
+Brackets are another special kind of character that can be very useful when writing regular expressions. Brackets serve to specify *character classes* to allow a level of flexibility between specifying a particular letter, and just matching *any* character as with a `.`. 
+
+Examples:
+
+* `[A-z]` will match any (capital or lowercase) letter in that range.
+* `[def]` will match *either* d, e, or f. 
+* `[0-9]` will match any numbers from 0-9.
+* To exclude certain characters, you can use `^`. For example, `[^abc]` will match any letter *except* for a, b, or c.
+* You can use the same or operator used in code `|` in regular expressions. For example, `[gr(a|e)y]` will match either gray or grey. Very useful if you're working with regional dialects!
+
+You can also use `\d` to match digits and `\s` to match whitespace characters like spaces and line breaks. Don't forget escape characters for these!
+
+Again using our library of common words, complete the following exercises:
+
+1. Find all words that start with vowels.
+2. Find all words that contain *no* vowels at all.
+3. Check the rule "i before e except after c" (i.e. how many times is this actually the case?)[^4]
+4. Can match dates (don't forget escape characters!)
+
+```{r, eval = FALSE}
+# 1
+grep("^[aeiou]", common_words, value = TRUE)
+# 2
+grep("^[^aeiou]+$", common_words, value = TRUE) # oops, this should have been in the next section
+# 3
+grep("ie", common_words, value = TRUE)
+grep("cei", common_words, value = TRUE)
+grep("ei", common_words, value = TRUE)
+# 4
+# [0-9]{1,2}\\/[0-9]{1,2}\\/[0-9]{4}
+```
+
+## Repetition
+
+Another way to increase our level of flexibility is to insert repetition into our regular expressions. There are several different characters that work with repetition in regex:
+
+* `?` matches between zero and one times, as many times as possible, giving back as needed (greedy)
+* `*` matches between zero and unlimited times, as many times as possible, giving back as needed (greedy)
+* `+` matches between one and unlimited times, as many times as possible, giving back as needed (greedy)
+
+You can also specify the number of matches more precisely as follows:
+
+* `{2}` will match exactly two times
+* `{2,}` will match two or more times
+* `{,2}` will match at most two times
+* `{2,4}` will match between two and four
+
+Notice how the `?, *, and +` are really just special cases of using the curly braces and can be recreated. What do those patterns look like?
+
+Knowing this, we should be able to write a regular expression that extracts all the usernames from our more complex email list. Please do so here:
+
+```{r, eval = FALSE}
+str_extract(emails, "^[A-z]+")
+# if any of the emails had a dot or non-alphabetic characters in them we could do something like this
+str_split(emails, "@") # should have taught this function
+```
+
+What does "greedy" mean? Greedy regular expressions will match the longest string possible. You can make regular expressions "lazy" by adding a `?`, which will match as few times as possible, expanding as needed only. This is very important, so let's fix ideas with an example. Suppose we wanted to identify the first word within quotes in a certain string (without literally typing out lamb as the pattern) including the quotes.
+
+```{r}
+example <- "Mary had a little \"lamb\". Its fleece was \"white\" as snow."
+writeLines(example)
+```
+
+We could use a regular expression like `\".+\"` here (bonus: what does this expression mean in real words?), but something strange will happen:
+
+```{r}
+str_view(example, "\".+\"")
+```
+
+What's going on here? The engine starts at the beginning of the string and searches for its first match, a `"`. It gets to this 16 characters into the string. Then it sees the wildcard `.`, which means any character (except a new line). Since the `+` quantifier is modifying `.`, the engine reads that match as saying "find as many other characters" onward (greedily). The engine will actually go all the way to the end of the string and start searching for the next character, another `"`. But since it's at the end of the string it starts to backtrack, until reaching the first quote it runs into in reverse, this is the quotation mark at the end of "white". **When using greedy searches, by default, the quantifier is repeated as many times possible, which might not be what you want!**
+
+We can fix this by using a lazy quantifier as follows:
+
+```{r}
+str_view(example, "\".+?\"")
+```
+
+To be clear: usually `?` is a quantifier by itself (zero or one), but if added after another quantifier (or even itself) it gets another meaning: it switches the matching mode from greedy to lazy.
+
+Back to our favorite set of examples for some practice. Create regular expressions to find words that:
+
+1. Start with three consonants.
+2. Have three or more vowels in a row.
+3. Have two or more vowel-consonant pairs in a row.
+
+```{r, eval = FALSE}
+# 1
+grep("^[^aeiou]{3}", common_words, value = TRUE)
+# 2
+grep("[aeiou]{3,}", common_words, value = TRUE)
+# 3
+grep("([aeiou][^aeiou]){2,}", common_words, value = TRUE)
+```
+
+# Real-life examples
+
+Now you're ready to take on some actual tasks. These are two examples that I've run into doing my own work, so I'm sure you'll run into something similar at some point.
+
+## Soccer scores
+
+For this task, we'll be using webscraping to extract the scores of the World Cup tournament matches from the Rec Sport Soccer Statistics Federation. Their website is *very* out of date, (e.g. http://www.rsssf.com/tables/30f.html), so we can't use traditional tags when webscraping to get our scores. It is *that* basic. The following long chunk just sets up the dataframe we'll be working with, so just run it and ignore it for your purposes.
+
+```{r, message = FALSE, eval = FALSE}
+# install.packages('readr')
+# install.packages('rvest')
+# install.packages('plyr')
+library(readr)
+library(rvest)
+library(plyr)
+
+# Create pre-2002 year vector
+
+year_vec_pre2002 <- c("30", "34","38","50","54","58","62","66","70","74","78","82","86","90","94","98")
+
+# Create pre-2002 list of data frames
+
+wcf_pre2002 = lapply(year_vec_pre2002, function(year) data.frame(read_lines(html_text(
+  html_nodes(read_html(paste0("http://www.rsssf.com/tables/", year, "f.html")), "pre"), trim = TRUE))))
+
+# Rename individual list items pre-2002
+
+names(wcf_pre2002) <- c("wcf_1930", "wcf_1934","wcf_1938","wcf_1950","wcf_1954","wcf_1958","wcf_1962","wcf_1966", "wcf_1970",
+                        "wcf_1974","wcf_1978","wcf_1982","wcf_1986","wcf_1990","wcf_1994","wcf_1998")
+
+# Do the same for post-2002 (create vector, create data frames, rename data frames, write as .csv)
+
+year_vec_post2002 <- c("2002", "2006", "2010", "2014")
+
+wcf_post2002 = lapply(year_vec_post2002, function(year) data.frame(read_lines(html_text(
+  html_nodes(read_html(paste0("http://www.rsssf.com/tables/", year, "f.html")), "pre"), trim = TRUE))))
+
+names(wcf_post2002) <- c("wcf_2002", "wcf_2006", "wcf_2010", "wcf_2014")
+
+# Now that the data is read in, we can combine the separate lists into one
+
+wcf_dataframes       <- c(wcf_pre2002, wcf_post2002)
+
+# Let's keep copies of pre2002 and post2002 just in case
+
+wcf_pre2002_data     <- ldply(wcf_pre2002, data.frame)
+wcf_post2002_data    <- ldply(wcf_post2002, data.frame)
+
+# Combine all data frames into single data frame with id, merge columns
+
+wcf_data <- ldply(wcf_dataframes, data.frame)
+wcf_data <- cbind(wcf_data[1], combinedtext = na.omit(unlist(wcf_data[-1])))
+row.names(wcf_data) <- 1:nrow(wcf_data)
+
+# Clean workspace
+
+rm(wcf_post2002, wcf_pre2002, year_vec_pre2002, year_vec_post2002, wcf_dataframes, wcf_post2002_data, wcf_pre2002_data)
+```
+
+Now that we're all set, take a look at the `wcf_data` object. It's a bit of a nightmare, but we can use regular expressions to extract the scores of the matches. Give it a shot, and I'll be walking around ready to help at any point. If you're reading this after my presentation, the answer key can be found in the GitHub repository for this tutorial: https://github.com/JulianEGerez/RegEx_Workshop.
+
+```{r, eval = FALSE}
+# Convert from factors to character
+
+wcf_data[,2] <- as.character(wcf_data[,2])
+
+wcf_data$scores <- str_match(wcf_data$combinedtext, " [0-9]{1,2}-[0-9]{1,2} ")
+
+# Split scores
+
+wcf_data$scoreA <- str_split_fixed(wcf_data$scores, "-", 2)[,1]
+wcf_data$scoreB <- str_split_fixed(wcf_data$scores, "-", 2)[,2]
+
+# Read in match teams
+
+# Extract raw text
+
+wcf_data$teamA <- str_match(wcf_data$combinedtext, "[A-z]* +[0-9]{1,2}-[0-9]{1,2}")
+wcf_data$teamB <- str_match(wcf_data$combinedtext, "[0-9]{1,2}-[0-9]{1,2} [A-z]* *[A-z]*")
+  
+# Clean the scores out
+
+wcf_data$teamA <- str_replace(wcf_data$teamA, " [0-9]{1,2}-[0-9]{1,2}", "")
+wcf_data$teamB <- str_replace(wcf_data$teamB, "[0-9]{1,2}-[0-9]{1,2} ", "")
+
+# I'll leave it at this, you can see the full set of code at https://github.com/JulianEGerez/WCQ
+```
+
+## Colombian departments
+
+This next task concerns municipalities in Colombian when two separate datasets use different IDs. We can set up the data as follows, but first download the `.Rdata` version of the UCDP Geo-referenced Event Dataset here: https://ucdp.uu.se/downloads/#d1 and name it `ged181`. You'll also need to download a dataset of the municipalities in Colombia here: https://www.datos.gov.co/Mapas-Nacionales/Departamentos-y-municipios-de-Colombia/xdk5-pm3f. Click "Exportar" and then select the `.csv` option and load it in as `names_data`. Again, beyond making sure you have the files loaded, you can ignore this first chunk of code.
+
+```{r, eval = FALSE}
+names_data <- read.csv("Departamentos_y_municipios_de_Colombia.csv", stringsAsFactors = FALSE)
+names(names_data) <- c("region", "department_code", "department_name", "municip_code", "municip_name")
+
+# Create "base" dataset
+
+years <- 1960:2018
+year_months <- rep(years, 12)
+months <- rep(1:12, length(1960:2018))
+year <- rep(year_months, 1123)
+month <- rep(months, 1123)
+
+panel_test <- cbind(year, month)
+panel <- as.data.frame(panel_test)
+
+panel <- panel[order(year, month),]
+rownames(panel) <- 1:nrow(panel)
+
+panel <- cbind.data.frame(panel, rep(unique(names_data$municip_code), 708))
+names(panel) <- c("year", "month", "municip_code")
+
+rm(month, months, year, years, year_months, panel_test)
+
+panel$municip_name <- ifelse(panel$municip_code == names_data$municip_code, names_data$municip_name, 0)
+
+# Classify municipalities into regions
+
+panel$region <- ifelse(panel$municip_code == unique(cbind(names_data$municip_code, names_data$region))[,1], unique(cbind(names_data$municip_code, names_data$region))[,2], NA)
+
+# Classify municipalities into departments
+
+panel$department <- ifelse(panel$municip_code == unique(cbind(names_data$municip_code, names_data$department_name))[,1], unique(cbind(names_data$municip_code, names_data$department_name))[,2], NA)
+
+panel$department_code <- ifelse(panel$municip_code == unique(cbind(names_data$municip_code, names_data$department_code))[,1], unique(cbind(names_data$municip_code, names_data$department_code))[,2], NA)
+
+# Make joined ID
+
+panel$municipality_department <- paste0(panel$municip_name, "_", panel$department)
+
+violence_UCDP <- subset(ged181, ged181$country == "Colombia" & ged181$type_of_violence == 3 & ged181$side_a != "Government of Colombia")
+rm(ged181)
+
+# Fix one observation
+
+violence_UCDP$adm_2[302] <- "Buga municipality"
+```
+
+Now that you're all set, I'll have you use the `violence_UCDP` data to create a month variable and then a new municipality-department variable that matches the `municipality_department` variable in `panel`. I'll be around to answer any questions, and likewise if you're reading thsi on your own, answers can be found on my GitHub: https://github.com/JulianEGerez/RegEx_Workshop.
+
+```{r, eval = FALSE}
+# Create month variable
+
+violence_UCDP$start_month <- as.numeric(substr(violence_UCDP$date_start, 6, 7))
+violence_UCDP$end_month <-  as.numeric(substr(violence_UCDP$date_end, 6, 7))
+length(violence_UCDP$id) - sum(violence_UCDP$start_month == violence_UCDP$end_month)
+
+# Change municipality names
+
+violence_UCDP$edited_municip <- gsub("municipality", "", violence_UCDP$adm_2)
+violence_UCDP$edited_municip <- trimws(violence_UCDP$edited_municip)
+violence_UCDP$edited_municip <- gsub(" Medellín", "", violence_UCDP$edited_municip)
+violence_UCDP$edited_municip <- gsub("^$", NA, violence_UCDP$edited_municip)
+
+# Change department names
+
+violence_UCDP$edited_departments <- gsub("department", "", violence_UCDP$adm_1)
+violence_UCDP$edited_departments <- trimws(violence_UCDP$edited_departments)
+violence_UCDP$edited_departments <- gsub("^$", NA, violence_UCDP$edited_departments)
+
+# Create municipality_department variable
+
+violence_UCDP$municipality_department <- paste0(violence_UCDP$edited_municip, "_", violence_UCDP$edited_departments)
+
+violence_UCDP$municipality_department <- gsub("NA", NA, violence_UCDP$municipality_department, ignore.case = FALSE)
+```
+
+## A fun bonus bit of knowledge
+
+If you followed the Colombia example all the way through, you'll realize that your two `municipality_department` variables don't quite exactly match either, though they are quite close. I really like the `string_dist` package and use it to write a function that will return the closest matches across two separate columns.
+
+```{r}
+library(stringdist)
+
+closest_match = function(string, stringVector){
+  
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+  
+}
+```
+
+When using this function, I recommend you combine it with `unique`, otherwise it is extremely computationally intensive. But this is very helpful for merging datasets. Enamorado, Fifield, and Imai (2018) systematize this with software that probabilistically links records across datasets in the package `fastLink`: https://imai.fas.harvard.edu/research/files/linkage.pdf
+
+# Other resources
+
+* Regex crossword (very fun!): https://regexcrossword.com
+* Regex 101 (extraordinarily useful way to rest your regex): https://regex101.com
+* Strings chapter of **R for Data Science**: https://r4ds.had.co.nz/strings.html
+* More practice exercises: https://regexone.com/lesson/introduction_abcs
+
+---
+
+**Thanks for your attention!**
+
+[^1]: Bonus points if you know what these names represent.
+[^2]: Hopefully you see where I'm going with this.
+[^3]: If you're just learning this, you're welcome!
+[^4]: Not including "i.e" of course.
